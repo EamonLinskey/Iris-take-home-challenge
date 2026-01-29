@@ -56,7 +56,7 @@ Candidates must use AI-assisted development tools (Cursor, Claude Code, GitHub C
 - Frontend/Backend Testing
 
 ## Tips
-
+- Our stack is Django Rest Framework on the backend and Next.js on the Frontend, but if you're more comfortable in a different stack feel free to use it!
 - Prioritize working core features over stretch goals
 - Document as you go, not at the end
 - It's okay to not finish everything
