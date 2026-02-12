@@ -145,7 +145,7 @@ class RAGPipeline:
         self,
         question: str,
         top_k: int = 5,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = 0.3
     ) -> List[Dict]:
         """
         Retrieve relevant context chunks for a question

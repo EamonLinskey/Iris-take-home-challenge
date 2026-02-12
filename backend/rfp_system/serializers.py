@@ -131,7 +131,7 @@ class SearchQuerySerializer(serializers.Serializer):
     """Serializer for semantic search requests"""
     query = serializers.CharField()
     top_k = serializers.IntegerField(default=5, min_value=1, max_value=20)
-    similarity_threshold = serializers.FloatField(default=0.7, min_value=0.0, max_value=1.0)
+    similarity_threshold = serializers.FloatField(default=0.3, min_value=0.0, max_value=1.0)
 
 
 class SearchResultSerializer(serializers.Serializer):

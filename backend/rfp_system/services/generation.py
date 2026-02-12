@@ -16,7 +16,7 @@ class AnswerGenerator:
             raise ValueError("ANTHROPIC_API_KEY not found in settings")
 
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-sonnet-4-5-20250929"  # Claude 4.5 Sonnet
         self.max_tokens = 2000
         self.temperature = 0.3  # Low for consistency in professional responses
 
