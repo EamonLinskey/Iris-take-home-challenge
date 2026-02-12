@@ -8,7 +8,8 @@ from .views import (
     RFPViewSet,
     QuestionViewSet,
     AnswerViewSet,
-    SearchViewSet
+    SearchViewSet,
+    TaskStatusViewSet
 )
 
 # Create router and register viewsets
@@ -25,4 +26,7 @@ urlpatterns = [
 
     # Custom search endpoint
     path('search/', SearchViewSet.as_view({'post': 'search'}), name='search'),
+
+    # Task status endpoint
+    path('tasks/status/', TaskStatusViewSet.as_view({'get': 'status'}), name='task-status'),
 ]

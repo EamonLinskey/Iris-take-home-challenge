@@ -31,7 +31,8 @@ A full-stack AI-powered RFP answer generation system built with Django REST Fram
 - ✅ Confidence scoring (from Claude API)
 - ✅ Answer caching (fully implemented with hash-based lookup + 20 tests)
 - ✅ Regenerate individual answers
-- ✅ Frontend/Backend Testing (100+ comprehensive tests)
+- ✅ Frontend/Backend Testing (120+ comprehensive tests)
+- ✅ **Async Processing** (Celery + Redis for background tasks)
 
 ---
 
@@ -48,31 +49,38 @@ A full-stack AI-powered RFP answer generation system built with Django REST Fram
 ┌──────────────────▼──────────────────────────┐
 │  Django REST Framework (Port 8000)          │
 │                                              │
-│  ┌──────────────────────────────────────┐   │
-│  │  Document Processing Pipeline        │   │
-│  │  - Extract text (PyPDF2, python-docx)│   │
-│  │  - Chunk text (LangChain, 800/200)   │   │
-│  │  - Generate embeddings (sentence-T)  │   │
-│  └──────────────────────────────────────┘   │
-│                   │                          │
-│  ┌────────────────▼──────────────────────┐  │
+│  ┌───────────────────────────────────────┐  │
+│  │  API Endpoints                        │  │
+│  │  - Returns task_id for async ops     │  │
+│  │  - Task status polling endpoint      │  │
+│  └───────────────┬───────────────────────┘  │
+│                  │                           │
+│  ┌───────────────▼───────────────────────┐  │
+│  │  Celery Task Queue                    │  │
+│  │  - process_document_async()           │  │
+│  │  - generate_answers_async()           │  │
+│  └───────────────┬───────────────────────┘  │
+│                  │                           │
+│  ┌───────────────▼───────────────────────┐  │
 │  │  RAG Pipeline                         │  │
+│  │  - Extract, chunk, embed              │  │
 │  │  - Semantic search (ChromaDB)         │  │
-│  │  - Context retrieval (top-5, 0.3)     │  │
 │  │  - Answer generation (Claude 4.5)     │  │
+│  │  - Answer caching (hash-based)        │  │
 │  └───────────────────────────────────────┘  │
 │                                              │
 │  ┌───────────────────────────────────────┐  │
 │  │  SQLite Database                      │  │
 │  │  - Documents, Chunks, RFPs, Q&A       │  │
+│  │  - TaskStatus (progress tracking)     │  │
 │  └───────────────────────────────────────┘  │
-└──────────────┬──────────────┬────────────────┘
-               │              │
-    ┌──────────▼────────┐  ┌──▼─────────────┐
-    │  ChromaDB         │  │  Claude API    │
-    │  (Vector Store)   │  │  (Generation)  │
-    │  - 384-dim vectors│  │  - Sonnet 4.5  │
-    └───────────────────┘  └────────────────┘
+└───────┬────────────┬────────────┬───────────┘
+        │            │            │
+┌───────▼──────┐ ┌───▼────────┐ ┌▼──────────────┐
+│  Redis       │ │  ChromaDB  │ │  Claude API   │
+│  (Broker)    │ │  (Vectors) │ │  (Generation) │
+│  Port: 6379  │ │  384-dim   │ │  Sonnet 4.5   │
+└──────────────┘ └────────────┘ └───────────────┘
 ```
 
 ---
@@ -82,6 +90,7 @@ A full-stack AI-powered RFP answer generation system built with Django REST Fram
 ### Backend
 - **Framework:** Django 4.2 + Django REST Framework 3.14
 - **Database:** SQLite (development)
+- **Task Queue:** Celery 5.3 + Redis 5.0 (async processing)
 - **Vector Store:** ChromaDB 0.4 (embedded mode with persistence)
 - **Embeddings:** sentence-transformers (all-MiniLM-L6-v2, 384-dim)
 - **LLM:** Claude 4.5 Sonnet via Anthropic API
@@ -127,6 +136,29 @@ A full-stack AI-powered RFP answer generation system built with Django REST Fram
 - "  WHAT IS YOUR PRICING  " → same hash (normalized)
 - "What are your prices?" → different hash (no semantic matching)
 
+### Async Processing (Stretch Goal)
+1. **Task Dispatch:** Document processing and answer generation run as Celery tasks
+2. **Non-blocking:** API returns 202 Accepted with `task_id` immediately
+3. **Progress Tracking:** TaskStatus model tracks progress, status, errors
+4. **Real-time Updates:** Frontend can poll `/api/v1/tasks/status/?task_id=<id>`
+5. **Status Updates:** PENDING → STARTED → PROGRESS (0-100%) → SUCCESS/FAILURE
+6. **Task Types:**
+   - `process_document_async()` - Extract, chunk, embed document
+   - `generate_answers_async()` - Generate all answers for an RFP
+   - `regenerate_answer_async()` - Regenerate single answer
+
+**Benefits:**
+- Handles large files (50+ MB) without request timeout
+- Concurrent processing of multiple documents/RFPs
+- Better UX with progress indicators
+- Scalable to multiple Celery workers
+
+**Implementation:**
+- Celery 5.3 with Redis broker
+- Django-celery-results for task result storage
+- TaskStatus model for detailed progress tracking
+- Task status API endpoint for polling
+
 ### Key Configuration
 ```python
 CHUNKING:
@@ -150,7 +182,8 @@ CLAUDE:
 ## API Endpoints
 
 ### Documents
-- `POST /api/v1/documents/` - Upload document (returns processed document with chunks)
+- `POST /api/v1/documents/` - Upload document (async, returns `task_id`)
+  - Response: `202 Accepted` with task_id for tracking
 - `GET /api/v1/documents/` - List all documents
 - `GET /api/v1/documents/{id}/` - Get document details
 - `DELETE /api/v1/documents/{id}/` - Delete document
@@ -159,11 +192,16 @@ CLAUDE:
 - `POST /api/v1/rfps/` - Create RFP with questions
 - `GET /api/v1/rfps/` - List all RFPs
 - `GET /api/v1/rfps/{id}/` - Get RFP with questions and answers
-- `POST /api/v1/rfps/{id}/generate_answers/` - Generate all answers
+- `POST /api/v1/rfps/{id}/generate-answers/` - Generate all answers (async, returns `task_id`)
+  - Response: `202 Accepted` with task_id for tracking
 - `DELETE /api/v1/rfps/{id}/` - Delete RFP
 
 ### Questions
-- `POST /api/v1/questions/{id}/regenerate/` - Regenerate single answer
+- `POST /api/v1/questions/{id}/regenerate-answer/` - Regenerate single answer
+
+### Tasks
+- `GET /api/v1/tasks/status/?task_id=<id>` - Get async task status and progress
+  - Returns: status, progress (0-100%), current_step, result/error
 
 ### Search (Testing)
 - `POST /api/v1/search/` - Test semantic search
@@ -223,6 +261,54 @@ npm run dev
 ```
 
 Frontend runs at: http://localhost:3000
+
+### Running Async Workers (Optional but Recommended)
+
+For background task processing (document upload, answer generation), you need to run Redis and Celery workers:
+
+**1. Install and Start Redis:**
+
+Windows (using Memurai or WSL):
+```bash
+# Option 1: Use Memurai (Redis for Windows)
+# Download from: https://www.memurai.com/get-memurai
+# Or use chocolatey:
+choco install memurai-developer
+
+# Option 2: Use WSL
+wsl
+sudo service redis-server start
+```
+
+Linux/Mac:
+```bash
+# Install Redis
+sudo apt-get install redis-server  # Ubuntu/Debian
+brew install redis                  # Mac
+
+# Start Redis
+redis-server
+```
+
+**2. Start Celery Worker:**
+```bash
+cd backend
+
+# Start Celery worker
+celery -A config worker --loglevel=info
+
+# Or on Windows:
+celery -A config worker --loglevel=info --pool=solo
+```
+
+**3. (Optional) Start Celery Flower for Monitoring:**
+```bash
+celery -A config flower
+# Access at: http://localhost:5555
+```
+
+**Without Redis/Celery:**
+The system will still work but document processing and answer generation will be synchronous (blocking requests). This is fine for testing with small files.
 
 ---
 
@@ -321,23 +407,24 @@ Frontend runs at: http://localhost:3000
 - **Good speed:** Fast enough for real-time generation
 - **Note:** Account had access to 4.x models, not 3.x
 
-### Synchronous Processing
-- **Simpler:** No Celery/Redis setup needed
-- **Fast enough:** <30s for 5-page PDF processing
-- **Good UX:** Loading states communicate progress
-- **Trade-off:** Blocks request but acceptable for demo
+### Async Processing with Celery + Redis
+- **Non-blocking:** Document processing and answer generation run in background
+- **Scalable:** Can handle large files and multiple concurrent requests
+- **Progress tracking:** Real-time task status via TaskStatus API
+- **Better UX:** Immediate response with task_id for polling
+- **Implementation:** Celery workers with Redis message broker
 
 ---
 
 ## What I'd Improve With More Time
 
 ### High Priority
-1. **Async Processing:** Celery + Redis for large file uploads
+1. ~~**Async Processing:** Celery + Redis for large file uploads~~ ✅ **IMPLEMENTED**
 2. **Better Chunking:** Semantic chunking instead of fixed-size
-3. **Testing:** Unit tests (pytest), integration tests, E2E tests
+3. ~~**Testing:** Unit tests (pytest), integration tests, E2E tests~~ ✅ **IMPLEMENTED (120+ tests)**
 4. **Error Recovery:** Better handling of API failures, retries
 5. **PostgreSQL:** Switch from SQLite for production readiness
-6. **Answer Caching:** Implement hash-based caching to avoid regeneration
+6. ~~**Answer Caching:** Implement hash-based caching to avoid regeneration~~ ✅ **IMPLEMENTED**
 
 ### Medium Priority
 7. **Batch Processing:** Process multiple RFPs simultaneously

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Document, DocumentChunk, RFP, Question, Answer
+from .models import Document, DocumentChunk, RFP, Question, Answer, TaskStatus
 
 
 @admin.register(Document)
@@ -49,3 +49,28 @@ class AnswerAdmin(admin.ModelAdmin):
     def question_preview(self, obj):
         return str(obj.question)[:50] + '...'
     question_preview.short_description = 'Question'
+
+
+@admin.register(TaskStatus)
+class TaskStatusAdmin(admin.ModelAdmin):
+    list_display = ('task_id', 'task_type', 'status', 'progress', 'created_at', 'completed_at')
+    list_filter = ('task_type', 'status', 'created_at')
+    search_fields = ('task_id', 'current_step', 'error')
+    readonly_fields = ('id', 'task_id', 'created_at', 'started_at', 'completed_at')
+    fieldsets = (
+        ('Task Information', {
+            'fields': ('id', 'task_id', 'task_type', 'status')
+        }),
+        ('Related Objects', {
+            'fields': ('document', 'rfp')
+        }),
+        ('Progress', {
+            'fields': ('progress', 'current_step', 'total_steps')
+        }),
+        ('Results', {
+            'fields': ('result', 'error', 'traceback')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'started_at', 'completed_at')
+        }),
+    )

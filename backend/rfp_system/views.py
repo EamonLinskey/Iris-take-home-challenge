@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 
-from .models import Document, DocumentChunk, RFP, Question, Answer
+from .models import Document, DocumentChunk, RFP, Question, Answer, TaskStatus
 from .serializers import (
     DocumentSerializer, DocumentListSerializer, DocumentChunkSerializer,
     RFPSerializer, RFPListSerializer, RFPCreateSerializer,
@@ -16,6 +16,7 @@ from .serializers import (
     AnswerGenerationSerializer
 )
 from .services.rag_pipeline import get_rag_pipeline
+from .tasks import process_document_async, generate_answers_async, regenerate_answer_async
 
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -37,36 +38,31 @@ class DocumentViewSet(viewsets.ModelViewSet):
         return DocumentSerializer
 
     def perform_create(self, serializer):
-        """Save document and trigger processing"""
+        """Save document and trigger async processing"""
         document = serializer.save()
 
-        # Get the file path
-        file_path = document.file.path
+        # Dispatch async task for document processing
+        task = process_document_async.delay(str(document.id))
 
-        # Process document using RAG pipeline
-        rag_pipeline = get_rag_pipeline()
-        result = rag_pipeline.process_document(
-            document_instance=document,
-            file_path=file_path
-        )
-
-        # Return processing result in response
-        self.processing_result = result
+        # Store task info for response
+        self.task_id = task.id
+        self.document_id = str(document.id)
 
     def create(self, request, *args, **kwargs):
-        """Override create to include processing result"""
+        """Override create to include task info"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
 
-        # Include processing result
+        # Include task info for async processing
         response_data = serializer.data
-        response_data['processing_result'] = getattr(self, 'processing_result', {})
+        response_data['task_id'] = getattr(self, 'task_id', None)
+        response_data['message'] = 'Document uploaded successfully. Processing started in background.'
 
         return Response(
             response_data,
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_202_ACCEPTED,  # 202 for async processing
             headers=headers
         )
 
@@ -99,98 +95,28 @@ class RFPViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def generate_answers(self, request, pk=None):
         """
-        Generate answers for all questions in this RFP
+        Generate answers for all questions in this RFP (async)
 
         POST /api/v1/rfps/{id}/generate-answers/
         Body: {
             "include_confidence": true,  # optional, default true
             "top_k": 5  # optional, default 5
         }
+
+        Returns task_id for tracking progress
         """
         rfp = self.get_object()
 
-        # Parse parameters
-        param_serializer = AnswerGenerationSerializer(data=request.data)
-        param_serializer.is_valid(raise_exception=True)
-        params = param_serializer.validated_data
+        # Dispatch async task for answer generation
+        task = generate_answers_async.delay(str(rfp.id))
 
-        # Update RFP status
-        rfp.status = 'processing'
-        rfp.save()
-
-        rag_pipeline = get_rag_pipeline()
-        generated_count = 0
-        errors = []
-
-        try:
-            # Generate answer for each question
-            for question in rfp.questions.all():
-                try:
-                    # Generate answer using RAG
-                    result = rag_pipeline.generate_answer(
-                        question=question.question_text,
-                        question_context=question.context,
-                        include_confidence=params['include_confidence'],
-                        top_k=params['top_k']
-                    )
-
-                    # Check if this answer came from cache
-                    is_cached = result.get('metadata', {}).get('cached', False)
-
-                    # Get or create answer
-                    answer, created = Answer.objects.get_or_create(
-                        question=question,
-                        defaults={
-                            'answer_text': result['answer'],
-                            'confidence_score': result.get('confidence_score'),
-                            'metadata': result['metadata'],
-                            'cached': is_cached
-                        }
-                    )
-
-                    if not created:
-                        # Update existing answer
-                        answer.answer_text = result['answer']
-                        answer.confidence_score = result.get('confidence_score')
-                        answer.metadata = result['metadata']
-                        answer.cached = is_cached
-                        answer.regenerated_count += 1
-                        answer.save()
-
-                    # Link source chunks
-                    chunk_ids = [chunk['id'] for chunk in result.get('source_chunks', [])]
-                    if chunk_ids:
-                        chunks = DocumentChunk.objects.filter(chromadb_id__in=chunk_ids)
-                        answer.source_chunks.set(chunks)
-
-                    generated_count += 1
-
-                except Exception as e:
-                    errors.append({
-                        'question_id': str(question.id),
-                        'error': str(e)
-                    })
-
-            # Update RFP status
-            rfp.status = 'completed' if not errors else 'failed'
-            rfp.save()
-
-            # Return results
-            return Response({
-                'success': True,
-                'rfp_id': str(rfp.id),
-                'generated_count': generated_count,
-                'total_questions': rfp.questions.count(),
-                'errors': errors
-            })
-
-        except Exception as e:
-            rfp.status = 'failed'
-            rfp.save()
-            return Response(
-                {'success': False, 'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return Response({
+            'success': True,
+            'rfp_id': str(rfp.id),
+            'task_id': task.id,
+            'message': 'Answer generation started in background. Use task_id to check progress.',
+            'total_questions': rfp.questions.count()
+        }, status=status.HTTP_202_ACCEPTED)
 
 
 class QuestionViewSet(viewsets.ModelViewSet):
@@ -340,4 +266,53 @@ class SearchViewSet(viewsets.ViewSet):
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class TaskStatusViewSet(viewsets.ViewSet):
+    """
+    API endpoint for checking async task status
+
+    status: Get status of a background task
+    """
+
+    @action(detail=False, methods=['get'])
+    def status(self, request):
+        """
+        Get status of a background task
+
+        GET /api/v1/tasks/status/?task_id=<task_id>
+        """
+        task_id = request.query_params.get('task_id')
+
+        if not task_id:
+            return Response(
+                {'error': 'task_id parameter is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Get task status from database
+            task_status = TaskStatus.objects.get(task_id=task_id)
+
+            return Response({
+                'task_id': task_status.task_id,
+                'task_type': task_status.task_type,
+                'status': task_status.status,
+                'progress': task_status.progress,
+                'current_step': task_status.current_step,
+                'total_steps': task_status.total_steps,
+                'result': task_status.result,
+                'error': task_status.error,
+                'created_at': task_status.created_at,
+                'started_at': task_status.started_at,
+                'completed_at': task_status.completed_at,
+                'document_id': str(task_status.document.id) if task_status.document else None,
+                'rfp_id': str(task_status.rfp.id) if task_status.rfp else None,
+            })
+
+        except TaskStatus.DoesNotExist:
+            return Response(
+                {'error': f'Task {task_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
             )

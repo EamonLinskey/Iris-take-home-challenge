@@ -123,3 +123,53 @@ class Answer(models.Model):
 
     def __str__(self):
         return f"Answer to: {self.question.question_text[:50]}..."
+
+
+class TaskStatus(models.Model):
+    """Track status of async Celery tasks"""
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('STARTED', 'Started'),
+        ('PROGRESS', 'In Progress'),
+        ('SUCCESS', 'Success'),
+        ('FAILURE', 'Failed'),
+        ('REVOKED', 'Revoked'),
+    ]
+
+    TASK_TYPE_CHOICES = [
+        ('document_processing', 'Document Processing'),
+        ('answer_generation', 'Answer Generation'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task_id = models.CharField(max_length=255, unique=True, db_index=True)  # Celery task ID
+    task_type = models.CharField(max_length=50, choices=TASK_TYPE_CHOICES)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='PENDING')
+
+    # Related objects (nullable to support different task types)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, null=True, blank=True, related_name='tasks')
+    rfp = models.ForeignKey(RFP, on_delete=models.CASCADE, null=True, blank=True, related_name='tasks')
+
+    # Progress tracking
+    progress = models.IntegerField(default=0)  # 0-100
+    current_step = models.CharField(max_length=255, blank=True)
+    total_steps = models.IntegerField(default=1)
+
+    # Results and errors
+    result = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    traceback = models.TextField(blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Task Status'
+        verbose_name_plural = 'Task Statuses'
+
+    def __str__(self):
+        return f"{self.task_type} - {self.status} ({self.progress}%)"
