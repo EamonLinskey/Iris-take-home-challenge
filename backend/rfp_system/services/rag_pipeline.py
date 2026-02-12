@@ -186,7 +186,8 @@ class RAGPipeline:
         question: str,
         question_context: str = None,
         include_confidence: bool = False,
-        top_k: int = 5
+        top_k: int = 5,
+        use_cache: bool = True
     ) -> Dict:
         """
         Generate an answer to a question using RAG
@@ -196,10 +197,40 @@ class RAGPipeline:
             question_context: Optional additional context
             include_confidence: Whether to include confidence score
             top_k: Number of context chunks to retrieve
+            use_cache: Whether to check for cached answers (default: True)
 
         Returns:
             Dictionary with answer, source chunks, and metadata
         """
+        # Check cache first if enabled
+        if use_cache:
+            from .caching import generate_question_hash, find_cached_answer
+
+            question_hash = generate_question_hash(question)
+            cached_answer = find_cached_answer(question_hash)
+
+            if cached_answer:
+                # Return cached answer with its source chunks
+                source_chunks = []
+                for chunk in cached_answer.source_chunks.all():
+                    source_chunks.append({
+                        'id': chunk.chromadb_id,
+                        'content': chunk.content,
+                        'similarity': None,  # Cached, no similarity score
+                        'metadata': chunk.chunk_metadata
+                    })
+
+                return {
+                    'answer': cached_answer.answer_text,
+                    'confidence_score': cached_answer.confidence_score,
+                    'source_chunks': source_chunks,
+                    'metadata': {
+                        **cached_answer.metadata,
+                        'cached': True,
+                        'cache_key': question_hash
+                    }
+                }
+
         # Retrieve context
         context_chunks = self.retrieve_context(
             question=question,

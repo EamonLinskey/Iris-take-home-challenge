@@ -87,6 +87,7 @@ class Question(models.Model):
     question_number = models.IntegerField()
     question_text = models.TextField()
     context = models.TextField(blank=True)  # Additional context if provided
+    question_hash = models.CharField(max_length=64, blank=True, db_index=True)  # For answer caching
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -95,6 +96,13 @@ class Question(models.Model):
 
     def __str__(self):
         return f"Q{self.question_number}: {self.question_text[:50]}..."
+
+    def save(self, *args, **kwargs):
+        """Auto-generate question hash on save"""
+        if not self.question_hash:
+            from .services.caching import generate_question_hash
+            self.question_hash = generate_question_hash(self.question_text)
+        super().save(*args, **kwargs)
 
 
 class Answer(models.Model):

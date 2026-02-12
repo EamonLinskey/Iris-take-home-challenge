@@ -29,8 +29,9 @@ A full-stack AI-powered RFP answer generation system built with Django REST Fram
 ### Stretch Goals Achieved
 - ✅ Vector embeddings for semantic search (sentence-transformers)
 - ✅ Confidence scoring (from Claude API)
-- ✅ Answer caching flag (implemented in models)
+- ✅ Answer caching (fully implemented with hash-based lookup + 20 tests)
 - ✅ Regenerate individual answers
+- ✅ Frontend/Backend Testing (100+ comprehensive tests)
 
 ---
 
@@ -106,11 +107,25 @@ A full-stack AI-powered RFP answer generation system built with Django REST Fram
 5. **Store:** Save chunks to Django DB + vectors to ChromaDB
 
 ### Answer Generation
-1. **Embed Question:** Generate embedding for RFP question
-2. **Retrieve:** Query ChromaDB for top-5 similar chunks (cosine similarity)
-3. **Filter:** Apply 0.3 similarity threshold (tuned for this embedding model)
-4. **Generate:** Send question + context to Claude 4.5 Sonnet
-5. **Return:** Professional answer with source attribution and confidence score
+1. **Cache Check:** Hash question and check for existing answer (instant if cached)
+2. **Embed Question:** Generate embedding for RFP question
+3. **Retrieve:** Query ChromaDB for top-5 similar chunks (cosine similarity)
+4. **Filter:** Apply 0.3 similarity threshold (tuned for this embedding model)
+5. **Generate:** Send question + context to Claude 4.5 Sonnet
+6. **Return:** Professional answer with source attribution and confidence score
+
+### Answer Caching (Stretch Goal)
+1. **Normalization:** Questions normalized (lowercase, whitespace, punctuation)
+2. **Hashing:** SHA256 hash generated for each question (`question_hash` field)
+3. **Cache Lookup:** Before generating, check if answer exists for this hash
+4. **Cache Hit:** Return existing answer instantly (saves ~8s + API costs)
+5. **Cache Miss:** Generate new answer and store for future use
+6. **Metadata:** Cached answers marked with `cached=True` and cache key in metadata
+
+**Example:**
+- "What is your pricing?" → hash: `a3f5b2c1...`
+- "  WHAT IS YOUR PRICING  " → same hash (normalized)
+- "What are your prices?" → different hash (no semantic matching)
 
 ### Key Configuration
 ```python

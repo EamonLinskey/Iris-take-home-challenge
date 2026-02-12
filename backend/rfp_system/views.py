@@ -134,13 +134,17 @@ class RFPViewSet(viewsets.ModelViewSet):
                         top_k=params['top_k']
                     )
 
+                    # Check if this answer came from cache
+                    is_cached = result.get('metadata', {}).get('cached', False)
+
                     # Get or create answer
                     answer, created = Answer.objects.get_or_create(
                         question=question,
                         defaults={
                             'answer_text': result['answer'],
                             'confidence_score': result.get('confidence_score'),
-                            'metadata': result['metadata']
+                            'metadata': result['metadata'],
+                            'cached': is_cached
                         }
                     )
 
@@ -149,6 +153,7 @@ class RFPViewSet(viewsets.ModelViewSet):
                         answer.answer_text = result['answer']
                         answer.confidence_score = result.get('confidence_score')
                         answer.metadata = result['metadata']
+                        answer.cached = is_cached
                         answer.regenerated_count += 1
                         answer.save()
 
@@ -228,13 +233,17 @@ class QuestionViewSet(viewsets.ModelViewSet):
                 top_k=params['top_k']
             )
 
+            # Check if this answer came from cache
+            is_cached = result.get('metadata', {}).get('cached', False)
+
             # Update or create answer
             answer, created = Answer.objects.get_or_create(
                 question=question,
                 defaults={
                     'answer_text': result['answer'],
                     'confidence_score': result.get('confidence_score'),
-                    'metadata': result['metadata']
+                    'metadata': result['metadata'],
+                    'cached': is_cached
                 }
             )
 
@@ -242,6 +251,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
                 answer.answer_text = result['answer']
                 answer.confidence_score = result.get('confidence_score')
                 answer.metadata = result['metadata']
+                answer.cached = is_cached
                 answer.regenerated_count += 1
                 answer.save()
 
