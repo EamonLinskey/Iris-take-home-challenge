@@ -19,6 +19,9 @@ langchain>=0.1.0
 langchain-community>=0.0.17
 tiktoken>=0.6.0
 
-# Development
+# Development & Testing
 pytest>=8.0.0
 pytest-django>=4.7.0
+pytest-mock>=3.12.0
+reportlab>=4.0.0
+factory-boy>=3.3.0

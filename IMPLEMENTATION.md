@@ -344,6 +344,30 @@ Frontend runs at: http://localhost:3000
 
 ## Testing Notes
 
+### Automated Testing ✅ ADDED
+
+**Backend Tests (pytest):**
+- ✅ 20 model tests - All passing
+- ✅ 25+ service unit tests (with mocking)
+- ✅ 15+ API integration tests
+- ✅ pytest configuration with markers (unit, integration)
+- ✅ Comprehensive fixtures for test data
+- ✅ Mocked external services (Claude API, ChromaDB, embeddings)
+- **Run with:** `py -3.12 -m pytest` in backend directory
+
+**Frontend Tests (Jest + React Testing Library):**
+- ✅ Jest configuration for Next.js 16
+- ✅ API client tests (documentsApi, rfpsApi, questionsApi, searchApi)
+- ✅ Component tests for documents page
+- ✅ Component tests for RFPs list and create pages
+- ✅ Mocked Next.js router and axios
+- **Run with:** `npm test` in frontend directory
+
+**Test Coverage:**
+- ~60 backend tests covering models, services, and APIs
+- ~42 frontend tests covering API client and components
+- See [TESTING.md](TESTING.md) for detailed documentation
+
 ### Manual Testing Completed
 - ✅ Document upload (PDF, DOCX, TXT)
 - ✅ Document processing and chunking
@@ -363,9 +387,10 @@ Frontend runs at: http://localhost:3000
 - Semantic search: <1s for top-5 retrieval
 - Answer generation: ~8s per question with Claude 4.5
 - E2E flow: Working smoothly
+- **Automated tests:** 20/20 backend model tests passing in 0.32s
 
 ### Known Limitations
-- No automated tests (time constraint)
+- No E2E tests (Playwright/Cypress not set up)
 - No error recovery for API failures
 - No rate limiting on endpoints
 - ChromaDB persistence requires server restart awareness
